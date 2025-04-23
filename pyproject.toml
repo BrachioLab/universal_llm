@@ -5,10 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "unillm"
 version = "0.1.0"
-description = "A unified interface for various Large Language Models"
+description = "A unified interface for using various LLMs"
 readme = "README.md"
 authors = [
-    {name = "Universal LLM Team", email = "example@example.com"}
+    {name = "Adam Stein", email = "steinad@seas.upenn.edu"}
 ]
 license = {text = "MIT"}
 classifiers = [
@@ -28,4 +28,4 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/universal_llm"
+Homepage = "https://github.com/BrachioLab/universal_llm"

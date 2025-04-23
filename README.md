@@ -13,7 +13,7 @@ pip install unillm
 To install from source:
 
 ```bash
-git clone https://github.com/yourusername/universal_llm.git
+git clone https://github.com/BrachioLab/universal_llm.git
 cd universal_llm
 pip install -e .
 ```

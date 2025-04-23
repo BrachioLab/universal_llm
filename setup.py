@@ -18,7 +18,7 @@ setup(
     description="A unified interface for various Large Language Models",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/universal_llm",
+    url="https://github.com/BrachioLab/universal_llm",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",

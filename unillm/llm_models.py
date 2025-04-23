@@ -8,6 +8,9 @@ from openai import OpenAI
 import anthropic
 from google import genai
 from google.genai import types
+from PIL import Image
+from io import BytesIO
+import base64
 from transformers import (
     AutoProcessor,
     AutoModelForCausalLM,
@@ -16,9 +19,12 @@ from transformers import (
 )
 from dotenv import load_dotenv
 
-from src.utils import base642img
-
 load_dotenv()  # Load variables from .env file
+
+def base642img(base64_str):
+    imgdata = base64.b64decode(base64_str)
+    return Image.open(BytesIO(imgdata))
+
 
 class OurLLM:
     def __init__(self, model_name):
