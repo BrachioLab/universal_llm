@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unillm"
+version = "0.1.0"
+description = "A unified interface for various Large Language Models"
+readme = "README.md"
+authors = [
+    {name = "Universal LLM Team", email = "example@example.com"}
+]
+license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "torch",
+    "transformers",
+    "openai",
+    "anthropic",
+    "boto3",
+    "python-dotenv",
+    "google-generativeai",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/universal_llm"
