@@ -24,7 +24,8 @@ dependencies = [
     "anthropic",
     "boto3",
     "python-dotenv",
-    "google-generativeai",
+    "google-genai",
+    "pillow"
 ]
 
 [project.urls]
