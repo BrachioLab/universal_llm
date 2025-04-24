@@ -1,4 +1,4 @@
-# LLM Models Module
+# Universal LLM Interface
 
 This module provides wrapper classes for interacting with various Large Language Models (LLMs) in a unified way.
 
@@ -25,9 +25,9 @@ pip install -e .
 A wrapper for local LLM models, particularly those from Hugging Face like Llama and Qwen.
 
 **Features:**
-- Supports Llama-3.2, Llama-3.3, and Qwen models
-- Handles both text and image inputs
-- Provides consistent interface for model inference
+- Supports Llama-3.2, Llama-3.3, and Qwen models.
+- Handles both text and image inputs.
+- Provides consistent interface for model inference.
 
 **Usage:**
 ```python
@@ -45,9 +45,9 @@ response = model.chat(prompt, sampling_params, use_tqdm=False)
 A wrapper for API-based LLM services like Claude, Gemini, and GPT.
 
 **Features:**
-- Supports Claude, Gemini, and GPT models
-- Handles API authentication and retries
-- Provides consistent interface for model inference
+- Supports Claude, Gemini, and GPT models.
+- Handles API authentication and retries.
+- Provides consistent interface for model inference.
 
 **Usage:**
 ```python
@@ -75,7 +75,8 @@ Both classes implement a common interface with the following methods:
 - boto3
 - anthropic
 - python-dotenv
-- google-generativeai
+- google-genai
+- pillow
 
 ## Building and Distribution
 
@@ -97,5 +98,6 @@ twine upload dist/*
 
 ## Notes
 
-- API keys should be configured securely, not hardcoded in the source code
-- The module is designed to be used with the vLLM framework for local models
+- API keys should be configured securely, not hardcoded in the source code.
+  Please create a `.env` directory which contains your API keys.
+- The module is designed to be used with the vLLM framework for local models.
