@@ -11,6 +11,8 @@ from google.genai import types
 from PIL import Image
 from io import BytesIO
 import base64
+import re
+from abc import ABC, abstractmethod
 from transformers import (
     AutoProcessor,
     AutoModelForCausalLM,
@@ -26,9 +28,54 @@ def base642img(base64_str):
     return Image.open(BytesIO(imgdata))
 
 
-class OurLLM:
+def img2base64(img):
+    """Convert PIL Image to base64 string"""
+    buffered = BytesIO()
+    img.save(buffered, format="JPEG")
+    return base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+
+class SamplingParams:
+    """Parameters for sampling from language models."""
+    
+    def __init__(self, temperature=0.7, max_tokens=2048, top_p=0.9, n=1, stop=None):
+        self.temperature = temperature  # Controls randomness: Lower means more deterministic
+        self.max_tokens = max_tokens    # Maximum number of tokens to generate
+        self.top_p = top_p              # Nucleus sampling parameter
+        self.n = n                      # Number of responses to generate
+        self.stop = stop                # Stop sequence for generation
+
+
+class UniLLM(ABC):
+    """Abstract base class for all LLM wrappers."""
+    
+    @abstractmethod
     def __init__(self, model_name):
+        """Initialize the LLM with a specific model name.
+        
+        Args:
+            model_name: The name of the model to load
+        """
         self.model_name = model_name
+    
+    @abstractmethod
+    def chat(self, prompt, sampling_params, use_tqdm=False):
+        """Generate a response based on the given prompt.
+        
+        Args:
+            prompt: The input prompt to the model, formatted as a list of message dicts
+            sampling_params: Parameters controlling the generation (SamplingParams instance)
+            use_tqdm: Whether to display a progress bar during generation
+            
+        Returns:
+            The model's response
+        """
+        pass
+
+
+class OurLLM(UniLLM):
+    def __init__(self, model_name):
+        super().__init__(model_name)
         hf_token = os.getenv("HF_TOKEN")
         if not hf_token:
             raise ValueError("HF_TOKEN environment variable not set")
@@ -65,7 +112,7 @@ class OurLLM:
                 model_name, token=hf_token
             )
 
-    def chat(self, prompt, sampling_params, use_tqdm):
+    def chat(self, prompt, sampling_params: SamplingParams, use_tqdm: bool):
         # parse prompt content
         prompt_content = []
         imgs = []
@@ -101,7 +148,6 @@ class OurLLM:
             )
             inputs = self.processor(input_text, return_tensors="pt").to("cuda:0")
 
-        print(self.processor.decode(inputs["input_ids"][0]))
         start = time.time()
         with torch.no_grad():
             outputs = self.model.generate(
@@ -113,10 +159,6 @@ class OurLLM:
                 stop_strings=[sampling_params.stop] if sampling_params.stop else None,
             )
         elapsed = time.time() - start
-
-        print(
-            f"Tokens per second: {(len(outputs[0][len(inputs['input_ids'][0]):])) / elapsed}"
-        )
 
         output_text = self.processor.decode(outputs[0][len(inputs["input_ids"][0]) :])
 
@@ -131,8 +173,9 @@ class OurLLM:
         return [Outputs([Text(output_text)])]
 
 
-class APIModel:
+class APIModel(UniLLM):
     def __init__(self, model_name, provider=None):
+        super().__init__(model_name)
         assert "claude" not in model_name or provider is not None, "Provider must be specified for Claude models. Can be 'anthropic' or 'bedrock'."
         if "gemini" in model_name:
             if "codeinterpreter" in model_name:
@@ -145,7 +188,6 @@ class APIModel:
         assert provider in ["google", "google-genai", "openai", "bedrock", "anthropic"], "Provider must be one of 'google', 'openai', 'bedrock', or 'anthropic'."
         self.provider = provider
 
-        self.model_name = model_name
         if provider in ["google", "openai"]:
             if provider == "google":
                 google_api_key = os.getenv("GOOGLE_API_KEY")
@@ -220,7 +262,7 @@ class APIModel:
             raise last_exception
         return None # Should not happen with positive attempts
 
-    def chat(self, prompt, sampling_params, use_tqdm):
+    def chat(self, prompt, sampling_params: SamplingParams, use_tqdm: bool):
         if self.provider == "bedrock":
             native_request = {
                 "messages": prompt,
@@ -363,20 +405,15 @@ class APIModel:
         if self.provider == "bedrock":
             response_body = json.loads(response["body"].read())
             # Claude 3 has a 'usage' field with input/output token counts
-            print("Prompt tokens:", response_body['usage']['input_tokens'])
-            print("Response tokens:", response_body['usage']['output_tokens'])
             response_text = response_body["content"][0]["text"]
             return [Outputs([Text(response_text)])]
         elif self.provider == "anthropic":
-            print("Prompt tokens:", response.usage.input_tokens)
-            print("Response tokens:", response.usage.output_tokens)
             response = response.content[0].text
             return [Outputs([Text(response)])]
         elif self.provider == "google-genai":
             # Extract token counts if available
             if response.usage_metadata is not None:
-                print("Prompt tokens:", response.usage_metadata.prompt_token_count)
-                print("Response tokens:", response.usage_metadata.candidates_token_count)
+                pass
             else:
                 print("Token counts not available for Google GenAI response")
 
@@ -416,10 +453,108 @@ class APIModel:
                         final_response += f"Output:\n{result['output']}\n"
             return [Outputs([Text(final_response)])]
         else:
-            print("Prompt tokens:", response.usage.prompt_tokens)
-            print("Response tokens:", response.usage.completion_tokens)
-
             if response.usage.completion_tokens > 0:
                 return [Outputs([Text(response.choices[i].message.content) for i in range(sampling_params.n)])]
             else:
                 return [Outputs([Text("") for i in range(sampling_params.n)])]
+
+
+class PromptedLLM:
+    def __init__(self, model: UniLLM, prompt: str) -> str:
+        self.model = model
+        self.prompt = prompt
+
+    def forward(self, str_input=None, img_input=None) -> str:
+        prompt = []
+
+        # Adding any the examples to the prompt
+        prompt_content = []
+        prompt_content.append({"type": "text", "text": self.prompt + "\nAt the end of your response, output just the answer after 'FINAL ANSWER:'."})
+
+        # Adding the input to the prompt (text or image)
+        if str_input is not None and img_input is None:
+            prompt_content.append({"type": "text", "text": str_input})
+        elif str_input is None and img_input is not None:
+            prompt_content.extend(
+                [
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(img_input)}",
+                                                        "detail": "high",
+                                                        }},
+                ]
+            )
+        else:
+            prompt_content.extend(
+                [
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(img_input)}",
+                                                        "detail": "high",
+                                                        }},
+                    {"type": "text", "text": str_input},
+                ]
+            )
+        
+        prompt.append({"role": "user", "content": prompt_content})
+        # prompt = [{"role": "user", "content": prompt_content}]
+
+        sampling_params = SamplingParams(temperature=0.0, max_tokens=5000, top_p=1.0)
+        output = (
+            self.model.chat(prompt, sampling_params=sampling_params, use_tqdm=False)[0]
+            .outputs[0]
+            .text
+        )
+
+        extra_args = [re.DOTALL]
+        try:
+            if "\\[ \\boxed{" in output:
+                res = re.findall(r"\[ \\boxed{(.*)}", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "**FINAL ANSWER:**" in output:
+                res = re.findall(r"\*\*FINAL ANS.*:\*\*(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "*FINAL ANSWER:*" in output:
+                res = re.findall(r"\*FINAL ANS.*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "**Final Answer:**" in output:
+                res = re.findall(r"\*\*Final Ans.*:\*\*(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "*Final Answer:*" in output:
+                res = re.findall(r"\*Final Ans.*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "Final answer:" in output:
+                res = re.findall(r"Final ans.*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "*Final answer:*" in output:
+                res = re.findall(r"\*Final ans.*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "**Final answer:**" in output:
+                res = re.findall(r"\*\*Final ans.*:\*\*(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "**Answer:**" in output:
+                res = re.findall(r"\*\*Answer:\*\*(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "*Answer:*" in output:
+                res = re.findall(r"\*Answer:\*(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "**Answer**:" in output:
+                res = re.findall(r"\*\*Answer\*\*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "*Answer*:" in output:
+                res = re.findall(r"\*Answer\*:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            elif "FINAL ANSWER:" in output:
+                res = re.findall(r"FINAL ANSWER:(.*)(?:<|$)", output, *extra_args)[-1]
+                pred = res.strip()
+            else:
+                pred = output.strip()
+
+            if "```json" in pred:
+                pred = re.findall(r"```json(.*?)```", pred, *extra_args)[-1]
+            if "```" in pred:
+                pred = re.sub(r"```", "", pred).strip()
+            if "<|eot_id|>" in pred:
+                pred = re.sub(r"<\|eot_id\|>", "", pred).strip()
+            if "\\text{" in pred:
+                res = re.findall(r"\\text{(.*?)}", pred, *extra_args)[-1]
+                pred = res.strip()
+            return pred
+        except Exception:
+            return "None"
