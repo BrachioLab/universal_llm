@@ -473,7 +473,7 @@ class PromptedLLM:
 
         # Adding the input to the prompt (text or image)
         if str_input is not None and img_input is None:
-            prompt_content.append({"type": "text", "text": str_input})
+            prompt_content.append({"type": "text", "text": f"Text input: {str_input}"})
         elif str_input is None and img_input is not None:
             prompt_content.extend(
                 [
@@ -488,7 +488,7 @@ class PromptedLLM:
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img2base64(img_input)}",
                                                         "detail": "high",
                                                         }},
-                    {"type": "text", "text": str_input},
+                    {"type": "text", "text": f"Text input: {str_input}"},
                 ]
             )
         
